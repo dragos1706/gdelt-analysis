@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: gdelt
+    database: gdelt-bq
+    schema: gdeltv2
+    tables:
+      - name: events_partitioned
+      - name: eventmentions_partitioned
