@@ -1,0 +1,1 @@
+This repo hosts dbt pipelines against GDELT's global event and mentions data in BigQuery, organized as a bronze/silver/gold pipeline and refreshed weekly via GitHub Actions. Each analysis lives as its own set of gold models and, where relevant, a public dashboard.
