@@ -1,3 +1,5 @@
+{{ config(materialized='table') }}
+
 WITH base as (
   SELECT * 
   FROM {{ ref('silver_event_checkpoints') }}
