@@ -1,0 +1,48 @@
+name: dbt weekly refresh
+
+"on":
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  dbt_run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gdelt_attention
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dbt
+        run: pip install dbt-bigquery
+
+      - name: Write GCP key file
+        run: echo '${{ secrets.GCP_SA_KEY }}' > $HOME/gcp-key.json
+
+      - name: Write dbt profiles.yml
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << EOF
+          gdelt_attention:
+            target: ci
+            outputs:
+              ci:
+                type: bigquery
+                method: service-account
+                project: open-intel-377412
+                dataset: gdelt_dbt_dev
+                threads: 4
+                location: US
+                keyfile: $HOME/gcp-key.json
+          EOF
+
+      - name: Run dbt build
+        run: dbt build
