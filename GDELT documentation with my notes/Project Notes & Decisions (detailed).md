@@ -277,12 +277,17 @@ I can only assume this is due to computational limitations and that the event me
 
 I conclude my exploration here, noting that I will left join with the events table on the left.
 
-## PS:
+## PS: Domains by Country Table
 There's one more dataset worth mentioning - the Domains by Country one - which aims to estimate the country of origin of various online news outlets. This estimation isn't based on the domain. Instead, GDELT estimates a country's status based on news coverage. If CNN.com mostly covers news about the US, for example, it gets labelled as a US publication. 
 
 This method has its limitations. The GDELT authors do mention that "who.int" was assigned to Guinea, for example, because WHO has focused a large volume of its news coverage thus far this year on the Ebola outbreak in Guinea. The documentation is available [here](https://blog.gdeltproject.org/announcing-new-source-country-crossreferencing-dataset/).
 
-I won't explore this dataset or its relationship with the others at this point.
+As of the end of August 2026, the dataset identifies 32790 sources. It identifies sources across 216 countries. However, the sources are skewed, with the US accounting for 12331 (38%), followed by Italy (4.6%), the UK (4.5%), China (3.1%), Canada (2.5%), France (2.2%), and Russia (2.1%). 18 countries have a single source.
+
+### Joining it with the events table
+The two tables can be joined based on the domain. The events table has the SOURCEURL field, which contains the domain. I wrote a regex query to extract the domain and the subdomain when included. But I couldn't find a way to extract the domain when subdomains were involved. For example, I cannot extract yahoo.com for an article published on the finance.yahoo.com subdomain.
+
+Since the Domains by Country tables were last updated in 2015, I will use a short Python script to extract the registrable domains, upload them, and treat them as static. More on this later though, as I haven't decided to implement it yet. 
 
 # Queries and pipeline
 As mentioned above, I want to analyse news longevity. That is, what types of events are likely to be mentioned more often. I'll use the `events` table to filter out a window over which events are observed and obtain their characteristics, such as whether a reported event involved cooperation or conflict. I'll use the `mentions` table to figure out the frequency of mentions. 
