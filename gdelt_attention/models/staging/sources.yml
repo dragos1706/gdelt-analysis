@@ -7,3 +7,4 @@ sources:
     tables:
       - name: events_partitioned
       - name: eventmentions_partitioned
+      - name: domainsbycountry_alllangs_april2015
