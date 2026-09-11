@@ -11,7 +11,8 @@ SELECT
   AvgTone AS avg_tone,
   NumMentions AS num_mentions,
   NumSources AS num_sources,
-  NumArticles AS num_articles
+  NumArticles AS num_articles,
+  SOURCEURL AS source_url
 
 FROM {{ source('gdelt', 'events_partitioned') }}
 WHERE _PARTITIONTIME >= timestamp('2026-06-01')
