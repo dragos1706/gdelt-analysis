@@ -12,7 +12,7 @@ credentials = service_account.Credentials.from_service_account_info(
 )
 client = bigquery.Client(credentials=credentials, project="open-intel-377412")
 
-@st.cache_data(ttl="1d")
+@st.cache_data(ttl="7d")
 def load_data():
     query = """
         select *
