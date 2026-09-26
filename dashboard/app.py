@@ -21,6 +21,26 @@ WEIGHTED_METRICS = [
     "pct_material_conflict",
 ]
 
+QUAD_CLASS_LABELS = {
+    "pct_verbal_cooperation": "Verbal cooperation",
+    "pct_material_cooperation": "Material cooperation",
+    "pct_verbal_conflict": "Verbal conflict",
+    "pct_material_conflict": "Material conflict",
+}
+
+
+def weighted_mean(frame, col):
+    return (frame[col] * frame["events"]).sum() / frame["events"].sum()
+
+
+def combine_countries(frame):
+    """One row per date across all countries in `frame`: summed events, event-weighted metrics."""
+    return frame.groupby("event_date").apply(
+        lambda day: pd.Series(
+            {"events": day["events"].sum(), **{col: weighted_mean(day, col) for col in WEIGHTED_METRICS}}
+        )
+    )
+
 
 def rolling_7d(country_df):
     """7-day rolling values for one country: events as a daily average, other metrics event-weighted."""
@@ -88,28 +108,99 @@ if not selected_countries:
     st.info("Select at least one country to see the chart.")
     st.stop()
 
-filtered = df[df["country"].isin(selected_countries)]
+selected = df[df["country"].isin(selected_countries)]
+
+# KPI row: last 7 days vs the 7 before, all selected countries combined
+daily = combine_countries(selected)
+last_date = daily.index.max()
+last_week = daily[daily.index > last_date - pd.Timedelta(days=7)]
+prev_week = daily[
+    (daily.index > last_date - pd.Timedelta(days=14)) & (daily.index <= last_date - pd.Timedelta(days=7))
+]
+sparkline = daily[daily.index > last_date - pd.Timedelta(days=56)]
+
+st.subheader("Last 7 days, selected countries")
+with st.container(horizontal=True):
+    events_now, events_prev = last_week["events"].sum(), prev_week["events"].sum()
+    st.metric(
+        "Events",
+        f"{events_now:,.0f}",
+        f"{(events_now / events_prev - 1) * 100:+.1f}% vs prior week",
+        border=True,
+        chart_data=sparkline["events"],
+    )
+    for col, fmt, delta_color in [
+        ("avg_tone", "{:.2f}", "normal"),
+        ("avg_goldstein", "{:.2f}", "normal"),
+        ("pct_material_conflict", "{:.1f}%", "inverse"),
+    ]:
+        now, prev = weighted_mean(last_week, col), weighted_mean(prev_week, col)
+        st.metric(
+            METRIC_LABELS[col],
+            fmt.format(now),
+            f"{now - prev:+.2f} vs prior week",
+            delta_color=delta_color,
+            border=True,
+            chart_data=sparkline[col],
+        )
+
+chart_df = selected
 if smooth:
-    filtered = (
-        filtered.groupby("country")[["event_date", "events", *WEIGHTED_METRICS]]
+    chart_df = (
+        selected.groupby("country")[["event_date", "events", *WEIGHTED_METRICS]]
         .apply(rolling_7d)
         .reset_index(level="country")
         .dropna(subset=["events"])
     )
+smooth_suffix = " · 7-day avg" if smooth else ""
 
-y_title = METRIC_LABELS[metric] + (" · 7-day avg" if smooth else "")
-
-chart = (
-    alt.Chart(filtered)
-    .mark_line()
-    .encode(
-        x=alt.X("event_date:T", title="Date"),
-        y=alt.Y(f"{metric}:Q", title=y_title),
-        color=alt.Color("country:N", title="Country"),
-        tooltip=["country", "event_date", metric],
+with st.container(border=True):
+    st.subheader("Trend by country")
+    chart = (
+        alt.Chart(chart_df)
+        .mark_line()
+        .encode(
+            x=alt.X("event_date:T", title="Date"),
+            y=alt.Y(f"{metric}:Q", title=METRIC_LABELS[metric] + smooth_suffix),
+            color=alt.Color("country:N", title="Country"),
+            tooltip=["country", "event_date", alt.Tooltip(f"{metric}:Q", format=".2f")],
+        )
+        .properties(height=450)
+        .interactive()
     )
-    .properties(height=450)
-    .interactive()
-)
+    st.altair_chart(chart)
 
-st.altair_chart(chart)
+with st.container(border=True):
+    st.subheader("Event mix by quad class")
+    composition_country = st.selectbox("Country", options=selected_countries)
+    composition = (
+        chart_df[chart_df["country"] == composition_country]
+        .melt(
+            id_vars="event_date",
+            value_vars=list(QUAD_CLASS_LABELS),
+            var_name="quad_class",
+            value_name="pct",
+        )
+        .assign(quad_class=lambda d: d["quad_class"].map(QUAD_CLASS_LABELS))
+    )
+    area = (
+        alt.Chart(composition)
+        .mark_area()
+        .encode(
+            x=alt.X("event_date:T", title="Date"),
+            y=alt.Y("pct:Q", stack=True, title="% of events" + smooth_suffix, scale=alt.Scale(domain=[0, 100])),
+            color=alt.Color(
+                "quad_class:N",
+                title="Quad class",
+                sort=list(QUAD_CLASS_LABELS.values()),
+                scale=alt.Scale(domain=list(QUAD_CLASS_LABELS.values()), range=["#4c9be8", "#1f5fa8", "#f0a35e", "#c8382c"]),
+            ),
+            order=alt.Order("quad_class_order:Q"),
+            tooltip=["event_date:T", "quad_class:N", alt.Tooltip("pct:Q", format=".1f")],
+        )
+        .transform_calculate(
+            quad_class_order=f"indexof({list(QUAD_CLASS_LABELS.values())}, datum.quad_class)"
+        )
+        .properties(height=350)
+    )
+    st.altair_chart(area)
