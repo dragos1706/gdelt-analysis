@@ -21,3 +21,5 @@ A dbt + BigQuery data platform built on GDELT (global news event) data, with a p
 ## Current state
 
 Bronze/silver/gold pipeline live, weekly CI/CD refresh working, country-domain mapping and a country-level "news pulse" gold table built, Streamlit dashboard deployed. No published write-up yet.
+
+- **Commits**: Conventional Commits (`feat:`, `fix:`, `refactor:`, `chore:`, `docs`), imperative mood, small and frequent. Do not add "Generated with Claude Code," "Co-Authored-By," or any session-link trailer to commit messages — clean commits only.
