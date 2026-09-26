@@ -82,6 +82,21 @@ df = load_data()
 
 st.caption(f"Data through {df['event_date'].max():%Y-%m-%d} · refreshed weekly")
 
+with st.expander("About the data"):
+    st.markdown(
+        """
+- **Source**: [GDELT](https://www.gdeltproject.org/) event records, refreshed weekly via dbt on BigQuery.
+- **Country** means the country a news source's coverage *focuses on*, from GDELT's 2015 domains-by-country
+  crosswalk, not where the publisher is based or where the event happened.
+- The crosswalk is skewed: about 38% of its sources are US-focused, so treat cross-country comparisons of
+  volume with care. About 83% of events match a known domain; the rest are excluded.
+- **Tone** ranges from −100 (very negative) to 100 (very positive); in practice most values sit just below zero.
+- **Goldstein scale** ranges from −10 (most destabilising) to 10 (most cooperative) — the theoretical impact of
+  the event type, not of the specific article.
+- **Quad class** buckets events into verbal/material cooperation and verbal/material conflict.
+"""
+    )
+
 top_countries = (
     df.groupby("country")["events"].sum()
     .sort_values(ascending=False)
@@ -93,6 +108,8 @@ selected_countries = st.multiselect(
     "Countries",
     options=sorted(df["country"].dropna().unique()),
     default=top_countries,
+    key="countries",
+    bind="query-params",
 )
 
 metric = st.selectbox(
@@ -100,9 +117,16 @@ metric = st.selectbox(
     options=list(METRIC_LABELS),
     format_func=METRIC_LABELS.get,
     index=0,
+    key="metric",
+    bind="query-params",
 )
 
-smooth = st.toggle("7-day rolling average", help="Smooths day-to-day noise; averages are weighted by event count.")
+smooth = st.toggle(
+    "7-day rolling average",
+    help="Smooths day-to-day noise; averages are weighted by event count.",
+    key="smooth",
+    bind="query-params",
+)
 
 if not selected_countries:
     st.info("Select at least one country to see the chart.")
@@ -172,7 +196,9 @@ with st.container(border=True):
 
 with st.container(border=True):
     st.subheader("Event mix by quad class")
-    composition_country = st.selectbox("Country", options=selected_countries)
+    composition_country = st.selectbox(
+        "Country", options=selected_countries, key="mix_country", bind="query-params"
+    )
     composition = (
         chart_df[chart_df["country"] == composition_country]
         .melt(
