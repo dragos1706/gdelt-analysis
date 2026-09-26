@@ -1,15 +1,17 @@
-# gdelt-dbt
+# GDELT Analysis
 
-dbt pipelines that turn GDELT's global news event data (in BigQuery) into analysis-ready tables about how news events spread and where they come from.
+dbt pipelines that turn GDELT's global news event data (in BigQuery) into analysis-ready tables about how news events spread and where they come from, plus a public Streamlit dashboard on top of them.
+
+**Live dashboard:** https://news-pulse.streamlit.app/
 
 ## Overview
 
 This is a solo analytics-engineering project built on [GDELT](https://www.gdeltproject.org/) (the Global Database of Events, Language, and Tone), which continuously monitors news media worldwide and codes reported events into a structured dataset. The project asks two questions of that data:
 
 1. **News longevity** — which kinds of events (cooperative vs. conflictual) keep getting mentioned in the days and weeks after they happen, and which fade quickly?
-2. **Country-level news pulse** — by mapping each event's source article back to a country, what does the daily volume, tone, and composition of news coverage look like per country?
+2. **Country-level news pulse** — by mapping each event's source article back to a country, what does the daily volume, tone, and composition of news coverage look like per country? This is the question the [dashboard](#dashboard) answers.
 
-Both analyses run on the same [bronze/silver/gold](#architecture) dbt pipeline against BigQuery, refreshed automatically every week via GitHub Actions.
+Both analyses run on the same [bronze/silver/gold](#architecture) dbt pipeline against BigQuery, refreshed automatically every week via GitHub Actions; the dashboard reads the refreshed gold tables directly.
 
 ## Architecture
 
@@ -17,11 +19,11 @@ The pipeline follows a bronze/silver/gold layering:
 
 ```
 bronze_events ─┬─→ silver_event_checkpoints ──→ gold_checkpoint_coverage_by_quadclass
-               ├─→ silver_event_domains ────────→ gold_news_by_country_date
+               ├─→ silver_event_domains ────────→ gold_news_by_country_date ──→ Streamlit dashboard
 bronze_mentions┘
 ```
 
-- **Bronze** — thin selects/renames off the raw GDELT BigQuery tables, filtered to a rolling recent window (`_PARTITIONTIME >= '2026-06-01'`). No business logic, just a stable, minimal interface onto the source data.
+- **Bronze** — thin selects/renames off the raw GDELT BigQuery tables, filtered on a fixed start date (`_PARTITIONTIME >= '2026-06-01'`), so the window grows with each weekly refresh. No business logic, just a stable, minimal interface onto the source data.
 - **Silver** — two independent enrichment tracks built on top of bronze:
   - `silver_event_checkpoints` joins events to their mentions and computes news-longevity indicators.
   - `silver_event_domains` maps each event's source URL to a country.
@@ -31,7 +33,7 @@ All models are explicitly materialized as `table` (the project default in `dbt_p
 
 ## Data Sources
 
-All source data comes from GDELT's public BigQuery dataset `gdelt-bq.gdeltv2` (declared in `gdelt_attention/models/staging/sources.yml`):
+All source data comes from GDELT's public BigQuery dataset `gdelt-bq.gdeltv2` (declared in `gdelt_attention/models/staging/sources.yml` — a leftover folder name; there are no staging models, the project uses bronze/silver/gold throughout):
 
 | Table | Contents |
 |---|---|
@@ -58,6 +60,15 @@ For deeper reference, see:
 - `gold_checkpoint_coverage_by_quadclass` — for each quad class × checkpoint (1/7/30 days), the share of eligible events that were still being mentioned at exactly that checkpoint (`pct_covered = count mentioned at exactly X days / count mentioned on day X or after`). Output is tidy/long (one row per quad_class × checkpoint_day).
 - `gold_news_by_country_date` — daily, per-country rollup: event volume, average/stddev tone, average/stddev Goldstein scale, and the percentage composition of each quad class. This is the "country-level news pulse" table.
 
+## Dashboard
+
+[GDELT News Pulse](https://news-pulse.streamlit.app/) (`dashboard/app.py`) is a Streamlit app that reads `gold_news_by_country_date` straight from BigQuery and plots it as an interactive Altair line chart over time:
+
+- **Countries** — multiselect, defaulting to the 8 countries with the most events.
+- **Metric** — `avg_tone`, `avg_goldstein`, `events`, or `pct_material_conflict`.
+
+Query results are cached for 7 days (`st.cache_data(ttl="7d")`), matching the weekly dbt refresh, so the app doesn't re-query BigQuery on every page load. It's hosted on Streamlit Community Cloud, which redeploys automatically on every push to `main`; BigQuery credentials come from a `gcp_service_account` entry in the app's Streamlit secrets.
+
 ## Data Quality Notes & Caveats
 
 The highlights below are the ones that actually shaped the model design; the full derivation, exploratory queries, and additional findings live in `GDELT documentation with my notes/Project Notes & Decisions (detailed).md`.
@@ -70,11 +81,15 @@ The highlights below are the ones that actually shaped the model design; the ful
 
 ## Setup & Running Locally
 
-Requires a BigQuery project you have access to and `dbt-bigquery` installed.
+Requires a BigQuery project you have access to. The dbt project and the dashboard use **separate** virtual environments and dependency lists — don't mix them. Both use [uv](https://docs.astral.sh/uv/).
+
+**dbt pipeline**
 
 ```bash
 cd gdelt_attention
-pip install dbt-bigquery
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install dbt-bigquery
 
 # configure ~/.dbt/profiles.yml for the `gdelt_attention` profile,
 # targeting your own BigQuery project/dataset (oauth or service-account auth)
@@ -82,23 +97,34 @@ pip install dbt-bigquery
 dbt build   # or: dbt run / dbt test
 ```
 
+**Dashboard**
+
+```bash
+cd dashboard
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -r requirements.txt
+
+# put a service-account key under [gcp_service_account] in
+# dashboard/.streamlit/secrets.toml (gitignored — never commit it)
+
+streamlit run app.py
+```
+
 ## CI/CD
 
-`.github/workflows/dbt_weekly.yml` runs `dbt build` every Monday at 06:00 UTC (and on manual `workflow_dispatch`), authenticating to BigQuery with a service account (`GCP_SA_KEY` secret) against the `gdelt_dbt_dev` dataset.
+`.github/workflows/dbt_weekly.yml` runs `dbt build` every Monday at 06:00 UTC (and on manual `workflow_dispatch`). It authenticates to BigQuery as a dedicated `dbt-ci` service account (`bigquery.dataEditor` + `bigquery.jobUser`, key stored as the `GCP_SA_KEY` repo secret) and writes to the `gdelt_dbt_dev` dataset. The refreshed gold tables are what the dashboard reads.
 
 ## Repo Structure
 
 ```
-gdelt-dbt/
+gdelt-analysis/
 ├── gdelt_attention/              # the dbt project
 │   ├── models/{bronze,silver,gold}/
 │   └── dbt_project.yml
+├── dashboard/                    # Streamlit app (own venv)
+│   ├── app.py
+│   └── requirements.txt          # only what Streamlit Cloud needs to run app.py
 ├── GDELT documentation with my notes/   # official GDELT reference PDFs + this project's research log
 └── .github/workflows/            # weekly CI refresh
 ```
-
-## Roadmap / Future Work
-
-- Add `schema.yml` model and column documentation plus data tests, and generate a `dbt docs` site.
-- Populate the staging layer — currently only `sources.yml` exists there, with no staging models yet.
-- Publish select gold models to a public dashboard.
