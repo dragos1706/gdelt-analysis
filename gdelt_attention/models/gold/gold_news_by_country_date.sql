@@ -17,5 +17,9 @@ SELECT
 FROM {{ ref('bronze_events') }} e
 INNER JOIN {{ ref('silver_event_domains') }} d 
 ON e.event_id = d.event_id
+-- exclude the latest event_date in bronze: it's the load day (weekly CI runs Mon 06:00 UTC),
+-- so only a partial day of events exists for it. Derived from the data, not CURRENT_DATE(),
+-- so it stays correct when gold is rebuilt on a later day than bronze.
+WHERE e.event_date < (SELECT MAX(event_date) FROM {{ ref('bronze_events') }})
 GROUP BY d.country, e.event_date
 ORDER BY d.country, e.event_date
