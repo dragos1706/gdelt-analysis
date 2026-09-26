@@ -5,6 +5,7 @@ logs/
 __pycache__/
 *.pyc
 .DS_Store
+CLAUDE.local.md
 
 # Streamlit agent skills (environment-specific symlinks)
 .agents/skills/developing-with-streamlit
