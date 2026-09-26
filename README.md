@@ -58,16 +58,23 @@ For deeper reference, see:
 
 **Gold**
 - `gold_checkpoint_coverage_by_quadclass` — for each quad class × checkpoint (1/7/30 days), the share of eligible events that were still being mentioned at exactly that checkpoint (`pct_covered = count mentioned at exactly X days / count mentioned on day X or after`). Output is tidy/long (one row per quad_class × checkpoint_day).
-- `gold_news_by_country_date` — daily, per-country rollup: event volume, average/stddev tone, average/stddev Goldstein scale, and the percentage composition of each quad class. This is the "country-level news pulse" table.
+- `gold_news_by_country_date` — daily, per-country rollup: event volume, average/stddev tone, average/stddev Goldstein scale, and the percentage composition of each quad class. This is the "country-level news pulse" table. The most recent `event_date` in `bronze_events` is excluded, since it is the load day and only has a partial day of events.
 
 ## Dashboard
 
-[GDELT News Pulse](https://news-pulse.streamlit.app/) (`dashboard/app.py`) is a Streamlit app that reads `gold_news_by_country_date` straight from BigQuery and plots it as an interactive Altair line chart over time:
+[GDELT News Pulse](https://news-pulse.streamlit.app/) (`dashboard/app.py`) is a Streamlit app that reads `gold_news_by_country_date` straight from BigQuery. Top to bottom:
 
-- **Countries** — multiselect, defaulting to the 8 countries with the most events.
-- **Metric** — `avg_tone`, `avg_goldstein`, `events`, or `pct_material_conflict`.
+- **Controls** — a country multiselect (defaults to the 8 countries with the most events), a metric selector (average tone, average Goldstein scale, events, % material conflict), and a 7-day rolling-average toggle. A caption shows the latest date in the data.
+- **KPI row** — events, average tone, average Goldstein scale, and % material conflict for the selected countries combined, over the last 7 days vs the prior 7, each with an 8-week sparkline.
+- **Trend by country** — an interactive Altair line chart of the chosen metric per country over time.
+- **Event mix by quad class** — a stacked area chart of one country's daily split across verbal/material cooperation and conflict (the four `pct_*` columns reshaped to long format with pandas `melt`).
+- **About the data** — an expander summarising the caveats below.
 
-Query results are cached for 7 days (`st.cache_data(ttl="7d")`), matching the weekly dbt refresh, so the app doesn't re-query BigQuery on every page load. It's hosted on Streamlit Community Cloud, which redeploys automatically on every push to `main`; BigQuery credentials come from a `gcp_service_account` entry in the app's Streamlit secrets.
+Whenever days or countries are combined (rolling averages, the KPI row), averages and percentages are **weighted by event count**, not averaged day by day, so a 50-event day doesn't count as much as a 5,000-event day. The rolling average treats missing days as zero events and starts only once a full 7-day window exists.
+
+Selections are kept in the URL query string (`bind="query-params"`), so a link reopens the same countries, metric, and settings.
+
+The BigQuery client is created once and reused (`st.cache_resource`), and query results are cached for 7 days (`st.cache_data(ttl="7d")`) to match the weekly dbt refresh, so the app doesn't re-query BigQuery on every interaction. It's hosted on Streamlit Community Cloud, which redeploys automatically on every push to `main` (and so starts with an empty cache); BigQuery credentials come from a `gcp_service_account` entry in the app's Streamlit secrets.
 
 ## Data Quality Notes & Caveats
 
